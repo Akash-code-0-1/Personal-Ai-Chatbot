@@ -10,6 +10,11 @@ export const metadata: Metadata = {
   title: 'Sharp AI - Knowledge Management Bot',
   description: 'Save, organize, and find information using intuitive commands. Your personal AI knowledge companion.',
   generator: 'v0.app',
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+  },
   icons: {
     icon: [
       {
@@ -35,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased">
         {children}
         <Analytics />
