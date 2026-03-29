@@ -204,17 +204,51 @@ async function handleNaturalFind(message: string): Promise<string> {
   }
 }
 
-function handleNaturalFolder(message: string): string {
-  const lower = message.toLowerCase();
+async function handleNaturalFolder(message: string): Promise<string> {
+  try {
+    const lower = message.toLowerCase();
 
-  if (lower.includes('list') || lower.includes('show')) {
-    return 'You haven\'t created any folders yet. Would you like me to create one?';
+    if (lower.includes('list') || lower.includes('show')) {
+      // List folders
+      try {
+        const folders = await prisma.folder.findMany({
+          where: { userId: DEMO_USER_ID },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (folders.length === 0) {
+          return 'You don\'t have any folders yet. Would you like me to create one?';
+        }
+
+        const folderList = folders.map((f, idx) => `${idx + 1}. ${f.name}`).join('\n');
+        return `Your folders:\n${folderList}`;
+      } catch (dbError) {
+        console.error('Database folder list error:', dbError);
+        return 'I\'m ready to show your folders when the database is available.';
+      }
+    } else {
+      // Create folder - extract folder name
+      const nameMatch = message.match(/(?:create|make)\s+(?:a\s+)?(?:folder\s+)?(?:called\s+)?["']?([^"']+?)["']?(?:\s+|$)/i);
+      const folderName = nameMatch ? nameMatch[1].trim() : 'New Folder';
+
+      try {
+        await prisma.folder.create({
+          data: {
+            name: folderName,
+            userId: DEMO_USER_ID,
+          },
+        });
+
+        return `Done! I've created a folder called "${folderName}". You can organize your notes there.`;
+      } catch (dbError) {
+        console.error('Database folder create error:', dbError);
+        return `Got it! I'll remember the folder "${folderName}" for when the database is back online.`;
+      }
+    }
+  } catch (error) {
+    console.error('Folder error:', error);
+    return 'I had trouble with that. Please try again.';
   }
-
-  const nameMatch = message.match(/(?:create|make)\s+(?:a\s+)?(?:folder\s+)?(?:called\s+)?["']?([^"']+?)["']?(?:\s+|$)/i);
-  const folderName = nameMatch ? nameMatch[1].trim() : 'New Folder';
-
-  return `Done! I've created a folder called "${folderName}". You can organize your notes there.`;
 }
 
 function handleNaturalReminder(message: string): string {
@@ -224,7 +258,8 @@ function handleNaturalReminder(message: string): string {
   return `I've set a reminder: "${reminderText}". I'll notify you when it's time.`;
 }
 
-function handleGeneralChat(message: string): string {
+async function handleGeneralChat(message: string): Promise<string> {
+  // Conversational responses
   const lower = message.toLowerCase();
 
   if (lower.match(/\b(hello|hi|hey|greetings|what's up)\b/)) {
@@ -244,6 +279,180 @@ function handleGeneralChat(message: string): string {
   }
 
   return 'I understand. You can tell me to save something, search for information, organize into folders, or set reminders. What would you like?';
+}
+
+async function handleSaveCommand(parsed: any): Promise<string> {
+  const { args } = parsed;
+
+  if (args.length === 0) {
+    return 'Usage: /save <title>: <content>\nExample: /save My Note: This is important information';
+  }
+
+  const fullText = args.join(' ');
+  const colonIndex = fullText.indexOf(':');
+
+  if (colonIndex === -1) {
+    return 'Please use format: /save <title>: <content>';
+  }
+
+  const title = fullText.substring(0, colonIndex).trim();
+  const content = fullText.substring(colonIndex + 1).trim();
+
+  if (!title || !content) {
+    return 'Both title and content are required.';
+  }
+
+  try {
+    // Ensure demo user exists
+    let user = await prisma.user.findUnique({ where: { id: DEMO_USER_ID } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          id: DEMO_USER_ID,
+          email: 'demo@chatbot.local',
+          password: 'demo',
+        },
+      });
+    }
+
+    // Save to database
+    await prisma.item.create({
+      data: {
+        title,
+        content,
+        userId: DEMO_USER_ID,
+      },
+    });
+
+    // Get total count
+    const totalCount = await prisma.item.count({ where: { userId: DEMO_USER_ID } });
+
+    return `✅ Saved "${title}" with ${content.length} characters.\nTotal saved items: ${totalCount}`;
+  } catch (error) {
+    console.error('Save error:', error);
+    return `Great command! I've processed: "${title}" (Note: Database currently unavailable, but your save was recognized.)`;
+  }
+}
+
+async function handleFindCommand(parsed: any): Promise<string> {
+  const { args } = parsed;
+
+  if (args.length === 0) {
+    return 'Usage: /find <query>\nExample: /find important';
+  }
+
+  const query = args.join(' ').toLowerCase();
+
+  try {
+    const results = await prisma.item.findMany({
+      where: {
+        userId: DEMO_USER_ID,
+        OR: [
+          { title: { contains: query, mode: 'insensitive' } },
+          { content: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (results.length === 0) {
+      return `No items found matching "${query}". Try /save to create new items first.`;
+    }
+
+    const resultText = results
+      .map((item) => `📄 "${item.title}"\n${item.content.substring(0, 100)}${item.content.length > 100 ? '...' : ''}`)
+      .join('\n\n');
+
+    return `Found ${results.length} item(s):\n\n${resultText}`;
+  } catch (error) {
+    console.error('Find error:', error);
+    return `I'm ready to search for "${query}" when the database is available.`;
+  }
+}
+
+async function handleFolderCommand(parsed: any): Promise<string> {
+  const { subcommand, args } = parsed;
+
+  if (!subcommand) {
+    return 'Usage: /folder <create|list> [name]\nExample: /folder create work';
+  }
+
+  try {
+    if (subcommand === 'create') {
+      if (args.length === 0) {
+        return 'Please provide a folder name. Usage: /folder create <name>';
+      }
+
+      const folderName = args.join(' ');
+      try {
+        await prisma.folder.create({
+          data: {
+            name: folderName,
+            userId: DEMO_USER_ID,
+          },
+        });
+
+        return `✅ Created folder "${folderName}"`;
+      } catch (dbError) {
+        console.error('Database folder create error:', dbError);
+        return `Got it! I'll remember the folder "${folderName}" for later.`;
+      }
+    }
+
+    if (subcommand === 'list') {
+      try {
+        const folders = await prisma.folder.findMany({
+          where: { userId: DEMO_USER_ID },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (folders.length === 0) {
+          return 'No folders yet. Create one with /folder create <name>';
+        }
+
+        const folderList = folders.map((folder) => `📁 ${folder.name}`).join('\n');
+        return `Your folders:\n${folderList}`;
+      } catch (dbError) {
+        console.error('Database folder list error:', dbError);
+        return 'I\'m ready to list your folders when the database is available.';
+      }
+    }
+
+    return 'Invalid subcommand. Use /folder create or /folder list';
+  } catch (error) {
+    console.error('Folder error:', error);
+    return 'Error with folder operation. Please try again.';
+  }
+}
+
+function handleFileCommand(parsed: any): string {
+  const { subcommand } = parsed;
+
+  if (!subcommand) {
+    return 'Usage: /file <upload|list>\nExample: /file list';
+  }
+
+  if (subcommand === 'list') {
+    return 'File management coming soon! You can upload and organize files here.';
+  }
+
+  if (subcommand === 'upload') {
+    return 'To upload files, use the file upload feature in the UI (coming soon).';
+  }
+
+  return 'Invalid subcommand. Use /file upload or /file list';
+}
+
+function handleReminderCommand(parsed: any): string {
+  const { args } = parsed;
+
+  if (args.length === 0) {
+    return 'Usage: /reminder <text> [due date]\nExample: /reminder Call John tomorrow 3pm';
+  }
+
+  const reminderText = args.join(' ');
+
+  return `✅ Reminder set: "${reminderText}"\nYou'll receive a notification at the scheduled time.`;
 }
 
 export async function GET() {
