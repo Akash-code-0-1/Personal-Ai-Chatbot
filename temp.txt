@@ -1,0 +1,24 @@
+i need that chat bot work like below..
+.> it will give response like the regular gemnini response first and take propmpt with both voice and text if i will give prompt in text 
+it will respone in chat if i give propmpt in voice it will give response in chat and also will read outloud.
+
+.> i will say it like i am going to do today 
+   do offie work 
+   update 
+   go home
+   prayer
+
+
+.> also i will ask it like what i have to do today that i said , what i did yesterday,,
+   and prayer is done,,, what is remining is todays task.
+
+   also add meeting with client in todays task.
+
+.> remind me tomorrow i will do meeting at 10 am with domino and on that ttime it will give notification
+
+.> smart search like i was planning with you back than anout ml project what was it,,
+.> and it will give me smart suggestions also,,
+
+.> my expenses traciking like i bought pen 10 tk it will store it in moneymangement things that wallet are manage 
+when i will ask it about it today , yesteday cost summary or that money thing ot will tell me abou it.
+

@@ -118,3 +118,4 @@ async function executeDatabaseLogic(cmdLine: string): Promise<string> {
     return "❌ Database connection error.";
   }
 }
+
